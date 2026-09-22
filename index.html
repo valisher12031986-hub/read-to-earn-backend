@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Read-to-Earn | Kitob O'quvchi</title>
+
+    <!-- Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --text-color: #212529;
+            --primary-color: #0088cc;
+            --card-bg: #ffffff;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            min-height: 90vh;
+        }
+
+        /* Yuqori panel: Balans va Taymer */
+        .header-panel {
+            position: sticky;
+            top: 0;
+            background-color: var(--card-bg);
+            padding: 12px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            z-index: 100;
+        }
+
+        .coin-box {
+            font-weight: bold;
+            color: #d97706;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .timer-box {
+            font-weight: 600;
+            color: var(--primary-color);
+            background: #e0f2fe;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        /* Kitob o'qish ekrani */
+        .book-container {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            line-height: 1.8;
+            font-size: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+            flex-grow: 1;
+            margin-bottom: 20px;
+        }
+
+        .book-title {
+            font-size: 20px;
+            margin-top: 0;
+            color: #111827;
+        }
+
+        /* Test tugmasi */
+        .quiz-btn {
+            width: 100%;
+            background-color: var(--primary-color);
+            color: #ffffff;
+            border: none;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: none; /* Dastlab yashirin, 2 daqiqa to'lgach chiqadi */
+        }
+
+        .quiz-btn:active {
+            opacity: 0.8;
+        }
+
+        /* Modal Test Oyna */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .option-btn {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            border-radius: 8px;
+            text-align: left;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header / Status Bar -->
+    <div class="header-panel">
+        <div class="coin-box">
+            🪙 <span id="user-coins">0</span> Koin
+        </div>
+        <div class="timer-box">
+            ⏱ O'qildi: <span id="timer-display">00:00</span>
+        </div>
+    </div>
+
+    <!-- Kitob Matni -->
+    <div class="book-container">
+        <h2 class="book-title">Abdulla Avloniy — Turkiy guliston yohud axloq</h2>
+        <h3>1-bob: Tarbiya va uning turlari</h3>
+        <p id="book-content">
+            Tarbiya bizlar uchun yo hayot — yo mamot, yo najot — yo halokat, yo saodat — yo falokat masalasidur. 
+            Lekin tarbiyani yolg'iz uyda emas, maktabda ham berish lozimdir...
+            <br><br>
+            (Matn davomi: Ushbu sahifada kamida 2 daqiqa o'qib turing. Taymer 02:00 ga yetganda quyida test topshirish tugmasi paydo bo'ladi.)
+        </p>
+    </div>
+
+    <!-- Test Topshirish Tugmasi -->
+    <button id="finish-btn" class="quiz-btn" onclick="openQuizModal()">
+        📝 Test topshirish va 10 Koin olish
+    </button>
+
+    <!-- Quiz Modal Oynasi -->
+    <div id="quiz-modal" class="modal">
+        <div class="modal-content">
+            <h3>Savol:</h3>
+            <p id="quiz-question">Abdulla Avloniy tarbiyani nechaga bo'ladi?</p>
+            <div id="quiz-options">
+                <button class="option-btn" onclick="submitQuiz(0)">A) 2 ga: Beden va Ruh</button>
+                <button class="option-btn" onclick="submitQuiz(1)">B) 3 ga: Beden, Fikr va Axloq</button>
+                <button class="option-btn" onclick="submitQuiz(2)">C) 4 ga: Jismoniy va Aqliy</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // -------------------------------------------------------------
+        // RENDER SERVER HAVOLASINI SHU YERGA QO'YING:
+        // -------------------------------------------------------------
+        const BACKEND_URL = "https://read-to-earn-backend-w63j.onrender.com"; // O'zingizning Render havolangizni qo'ying
+
+        // Telegram WebApp SDK
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const tgUser = tg.initDataUnsafe?.user || { id: 999999, username: "guest_user" };
+
+        let sessionId = null;
+        let secondsRead = 0;
+        let timerInterval = null;
+        let heartbeatInterval = null;
+        const MINIMUM_SECONDS = 120; // 2 minut (120 soniya)
+
+        // 1. Autentifikatsiya va sessiyani boshlash
+        async function initApp() {
+            try {
+                const authRes = await fetch(`${BACKEND_URL}/api/auth`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: tgUser.id, username: tgUser.username })
+                });
+                const authData = await authRes.json();
+                document.getElementById('user-coins').innerText = authData.coins_balance;
+
+                const sessionRes = await fetch(`${BACKEND_URL}/api/reading/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: tgUser.id, chapter_id: 1 })
+                });
+                const sessionData = await sessionRes.json();
+                sessionId = sessionData.session_id;
+
+                startTimer();
+                startHeartbeat();
+
+            } catch (err) {
+                console.error("Xatolik yuz berdi:", err);
+                tg.showAlert("Backend server bilan bog'lanishda xatolik!");
+            }
+        }
+
+        // 2. Taymer
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                secondsRead++;
+                
+                const mins = String(Math.floor(secondsRead / 60)).padStart(2, '0');
+                const secs = String(secondsRead % 60).padStart(2, '0');
+                document.getElementById('timer-display').innerText = `${mins}:${secs}`;
+
+                if (secondsRead >= MINIMUM_SECONDS) {
+                    document.getElementById('finish-btn').style.display = 'block';
+                }
+            }, 1000);
+        }
+
+        // 3. Heartbeat (Har 30 soniyada backendga vaqt yuborish)
+        function startHeartbeat() {
+            heartbeatInterval = setInterval(async () => {
+                if (!sessionId) return;
+
+                try {
+                    await fetch(`${BACKEND_URL}/api/reading/heartbeat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: sessionId,
+                            telegram_id: tgUser.id,
+                            seconds_read: 30
+                        })
+                    });
+                } catch (err) {
+                    console.error("Heartbeat xatosi:", err);
+                }
+            }, 30000);
+        }
+
+        // 4. Modal oynani ochish
+        function openQuizModal() {
+            document.getElementById('quiz-modal').style.display = 'flex';
+        }
+
+        // 5. Test javobini yuborish
+        async function submitQuiz(selectedOption) {
+            const correctOption = 1; // B varianti to'g'ri
+            const isCorrect = (selectedOption === correctOption) ? 1 : 0;
+
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/reading/submit-quiz`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telegram_id: tgUser.id,
+                        session_id: sessionId,
+                        chapter_id: 1,
+                        correct_answers: isCorrect,
+                        total_questions: 1
+                    })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    tg.showAlert(data.message);
+                    document.getElementById('user-coins').innerText = data.new_balance;
+                    document.getElementById('quiz-modal').style.display = 'none';
+                    document.getElementById('finish-btn').style.display = 'none';
+                    
+                    clearInterval(timerInterval);
+                    clearInterval(heartbeatInterval);
+                } else {
+                    tg.showAlert(data.detail || "Xatolik yuz berdi");
+                }
+            } catch (err) {
+                console.error("Quiz submit error:", err);
+                tg.showAlert("Serverga ulanishda xatolik!");
+            }
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
