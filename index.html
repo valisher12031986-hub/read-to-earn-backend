@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Read to Earn - Kitob o'qib daromad qil</title>
+    <title>Read to Earn - Kutubxona</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -24,20 +24,27 @@
             text-align: center;
             padding: 30px 10px;
         }
-        .btn-phone {
+        .btn-primary {
             background-color: #24a1de;
             color: white;
             border: none;
-            padding: 14px 24px;
-            border-radius: 10px;
-            font-size: 16px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 15px;
             font-weight: bold;
             cursor: pointer;
             box-shadow: 0 3px 6px rgba(36,161,222,0.3);
-            transition: 0.2s;
+            width: 100%;
         }
-        .btn-phone:active {
-            transform: scale(0.98);
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            margin-bottom: 10px;
         }
         .header-bar {
             display: flex;
@@ -54,10 +61,28 @@
             border-radius: 20px;
             font-weight: bold;
         }
-        .book-title {
-            font-size: 20px;
+        .item-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 12px;
+            background: #fafafa;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .item-card:hover {
+            background: #f0f7ff;
+            border-color: #24a1de;
+        }
+        .item-title {
+            font-weight: bold;
+            font-size: 16px;
             color: #2c3e50;
-            margin-top: 0;
+            margin-bottom: 5px;
+        }
+        .item-subtitle {
+            font-size: 13px;
+            color: #666;
         }
         .book-text {
             line-height: 1.7;
@@ -65,7 +90,7 @@
             max-height: 250px;
             overflow-y: auto;
             border: 1px solid #eee;
-            padding: 10px;
+            padding: 12px;
             border-radius: 8px;
             background: #fafafa;
         }
@@ -88,69 +113,84 @@
             cursor: pointer;
         }
         .quiz-option:hover {
-            background: #f0f0f0;
+            background: #eef;
         }
     </style>
 </head>
 <body>
 
-    <!-- TELEFON RAQAM SOHASI (Dastlab faqat shu ko'rinadi) -->
+    <!-- TELEFON RAQAM SOHASI -->
     <div id="auth-screen" class="card auth-container">
         <h2>Xush kelibsiz! 👋</h2>
-        <p>Tizimdan foydalanish va o'qilgan kitoblar uchun koinlarni yig'ish uchun telefon raqamingizni tasdiqlang.</p>
+        <p>Tizimdan foydalanish va koin yig'ish uchun telefon raqamingizni tasdiqlang.</p>
         <br>
-        <button id="request-phone-btn" class="btn-phone">
+        <button id="request-phone-btn" class="btn-primary">
             📱 Telefon raqamni ulashish
         </button>
     </div>
 
-    <!-- ASOSIY KITOB ILOVASI (Avtorizatsiyadan o'tgach ochiladi) -->
+    <!-- ASOSIY ILOVA SOHASI -->
     <div id="main-app" style="display: none;">
+        <!-- HEADER -->
         <div class="card header-bar">
             <div><strong>Foydalanuvchi:</strong> <span id="username-display">...</span></div>
             <div class="balance-badge">💰 <span id="user-coins">0</span> Koin</div>
         </div>
 
-        <div class="card">
-            <h3 class="book-title">Turkiy guliston yohud axloq</h3>
-            <p><strong>Muallif:</strong> Abdulla Avloniy</p>
-            <div class="book-text">
-                O'zbek xalqining ma'naviy va axloqiy tarbiyasida ushbu asar muhim o'rin tutadi. Intizom, ilm, tarbiya va odob har bir inson uchun eng zarur bo'lgan fazilatlardandir. Inson ma'rifatli bo'lishi uchun yoshligidan kitob o'qish va foydali ilmlarni o'rganishga intilishi lozim...
+        <!-- 1. KITOBLAR KATALOGI -->
+        <div id="books-list-view" class="card">
+            <h3>📚 Kitoblar katalogi</h3>
+            <div id="books-container">Yuklanmoqda...</div>
+        </div>
+
+        <!-- 2. BOBLAR RO'YXATI -->
+        <div id="chapters-list-view" class="card" style="display: none;">
+            <button class="btn-secondary" onclick="showBooksList()">⬅️ Kitoblarga qaytish</button>
+            <h3 id="selected-book-title">Kitob nomi</h3>
+            <p id="selected-book-author" style="color: #666; font-size: 14px;"></p>
+            <h4>Boblar:</h4>
+            <div id="chapters-container">Yuklanmoqda...</div>
+        </div>
+
+        <!-- 3. KITOB O'QISH VA TEST EKRAMI -->
+        <div id="reading-view" class="card" style="display: none;">
+            <button class="btn-secondary" onclick="showChaptersList()">⬅️ Boblarga qaytish</button>
+            <h3 id="reading-chapter-title">Bob nomi</h3>
+            <div id="reading-content" class="book-text">
+                Yuklanmoqda...
             </div>
 
             <div class="timer-box">
                 ⏱️ Qolgan vaqt: <span id="timer-count">120</span> soniya
             </div>
-        </div>
 
-        <div id="quiz-card" class="card" style="display: none;">
-            <h3>Matn bo'yicha savol:</h3>
-            <p>Inson ma'rifatli bo'lishi uchun nimaga intilishi lozim?</p>
-            <button class="quiz-option" onclick="submitAnswer(0)">Faqat dam olishga</button>
-            <button class="quiz-option" onclick="submitAnswer(1)">Kitob o'qish va ilmlarni o'rganishga</button>
-            <button class="quiz-option" onclick="submitAnswer(2)">Kino ko'rishga</button>
+            <!-- TEST BO'LIMI -->
+            <div id="quiz-card" style="display: none; margin-top: 15px; border-top: 2px solid #eee; padding-top: 15px;">
+                <h4 id="quiz-question">Savol yuklanmoqda...</h4>
+                <div id="quiz-options-container"></div>
+            </div>
         </div>
     </div>
 
     <script>
-        const BACKEND_URL = "https://read-to-earn-backend-6tvp3uw0l-kitob-hayot-chirog-i.vercel.app"; // Render yoki Vercel backend havolangiz
+        const BACKEND_URL = "https://read-to-earn-backend-6tvp3uw0l-kitob-hayot-chirog-i.vercel.app"; // O'zingizning backend havolangiz
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        // Telegram foydalanuvchi ma'lumotlari
         const tgUser = tg.initDataUnsafe?.user || { id: 12345678, username: "test_user" };
 
+        let selectedBookId = null;
+        let selectedChapterId = null;
         let currentSessionId = null;
         let timerSeconds = 120;
         let timerInterval = null;
         let heartbeatInterval = null;
 
-        // Telefon raqam yuborish tugmasi
+        // Telefon raqam ulashish tugmasi
         document.getElementById('request-phone-btn').addEventListener('click', () => {
             if (tg.requestContact) {
                 tg.requestContact((sent, response) => {
                     if (sent) {
-                        // Contact yuborilganda Telegram SDK javobidan telefon raqamni olish
                         const phoneNumber = response?.responseUnsafe?.contact?.phone_number || "998000000000";
                         registerUser(phoneNumber);
                     } else {
@@ -158,12 +198,11 @@
                     }
                 });
             } else {
-                // Brauzer orqali test qilinganda
                 registerUser("998901234567");
             }
         });
 
-        // Backend'ga foydalanuvchini ro'yxatdan o'tkazish/tekshirish
+        // Foydalanuvchini ro'yxatdan o'tkazish/tekshirish
         async function registerUser(phoneNumber = null) {
             try {
                 const res = await fetch(`${BACKEND_URL}/api/auth`, {
@@ -179,13 +218,12 @@
                 const data = await res.json();
 
                 if (data.phone_number) {
-                    // Telefon raqam mavjud bo'lsa, asosiy oynani ochamiz
                     document.getElementById('auth-screen').style.display = 'none';
                     document.getElementById('main-app').style.display = 'block';
                     document.getElementById('username-display').innerText = data.username || "Foydalanuvchi";
                     document.getElementById('user-coins').innerText = data.coins_balance;
 
-                    startReadingSession();
+                    loadBooks();
                 } else {
                     document.getElementById('auth-screen').style.display = 'block';
                     document.getElementById('main-app').style.display = 'none';
@@ -195,23 +233,120 @@
             }
         }
 
-        // O'qish sessiyasini boshlash
-        async function startReadingSession() {
+        // 1. KITOBLARNI YUKLASH
+        async function loadBooks() {
+            showBooksList();
+            const container = document.getElementById('books-container');
+            container.innerHTML = "Yuklanmoqda...";
+
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/books`);
+                const books = await res.json();
+
+                container.innerHTML = "";
+                books.forEach(book => {
+                    const item = document.createElement('div');
+                    item.className = 'item-card';
+                    item.innerHTML = `
+                        <div class="item-title">📖 ${book.title}</div>
+                        <div class="item-subtitle">Muallif: ${book.author} | Boblar soni: ${book.chapters_count}</div>
+                    `;
+                    item.onclick = () => loadChapters(book);
+                    container.appendChild(item);
+                });
+            } catch (err) {
+                container.innerHTML = "Kitoblarni yuklashda xatolik yuz berdi.";
+            }
+        }
+
+        // 2. BOBLARNI YUKLASH
+        async function loadChapters(book) {
+            selectedBookId = book.id;
+            document.getElementById('books-list-view').style.display = 'none';
+            document.getElementById('chapters-list-view').style.display = 'block';
+            document.getElementById('reading-view').style.display = 'none';
+
+            document.getElementById('selected-book-title').innerText = book.title;
+            document.getElementById('selected-book-author').innerText = "Muallif: " + book.author;
+
+            const container = document.getElementById('chapters-container');
+            container.innerHTML = "Yuklanmoqda...";
+
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/books/${book.id}/chapters`);
+                const chapters = await res.json();
+
+                container.innerHTML = "";
+                chapters.forEach(ch => {
+                    const item = document.createElement('div');
+                    item.className = 'item-card';
+                    item.innerHTML = `<div class="item-title">📌 ${ch.title}</div>`;
+                    item.onclick = () => openChapter(ch.id);
+                    container.appendChild(item);
+                });
+            } catch (err) {
+                container.innerHTML = "Boblarni yuklashda xatolik yuz berdi.";
+            }
+        }
+
+        // 3. BOBNI OCHISH VA O'QISH
+        async function openChapter(chapterId) {
+            selectedChapterId = chapterId;
+            document.getElementById('chapters-list-view').style.display = 'none';
+            document.getElementById('reading-view').style.display = 'block';
+            document.getElementById('quiz-card').style.display = 'none';
+
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/chapters/${chapterId}`);
+                const chapter = await res.json();
+
+                document.getElementById('reading-chapter-title').innerText = chapter.title;
+                document.getElementById('reading-content').innerText = chapter.content;
+
+                // Test ma'lumotlarini tayyorlash
+                document.getElementById('quiz-question').innerText = chapter.question;
+                const optionsContainer = document.getElementById('quiz-options-container');
+                optionsContainer.innerHTML = "";
+                chapter.options.forEach((opt, idx) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'quiz-option';
+                    btn.innerText = opt;
+                    btn.onclick = () => submitAnswer(idx);
+                    optionsContainer.appendChild(btn);
+                });
+
+                // Sessiyani boshlash va taymerni yoqish
+                startReadingSession(chapterId);
+
+            } catch (err) {
+                alert("Bob matnini yuklashda xatolik!");
+            }
+        }
+
+        // SESSIYANI BOSHLASH
+        async function startReadingSession(chapterId) {
+            clearInterval(timerInterval);
+            clearInterval(heartbeatInterval);
+            timerSeconds = 120;
+            document.getElementById('timer-count').innerText = timerSeconds;
+
             try {
                 const res = await fetch(`${BACKEND_URL}/api/start-session`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ telegram_id: tgUser.id })
+                    body: JSON.stringify({
+                        telegram_id: tgUser.id,
+                        chapter_id: chapterId
+                    })
                 });
 
                 const data = await res.json();
                 currentSessionId = data.session_id;
 
-                // Taymer va Heartbeat ishga tushirish
                 startTimer();
                 startHeartbeat();
             } catch (err) {
-                console.error("Sessiya boshlashda xatolik:", err);
+                console.error("Sessiya xatosi:", err);
             }
         }
 
@@ -242,7 +377,7 @@
             }, 30000);
         }
 
-        // Test javobini yuborish
+        // TEST JAVOBINI YUBORISH
         async function submitAnswer(optionIndex) {
             try {
                 const res = await fetch(`${BACKEND_URL}/api/claim-quiz`, {
@@ -266,11 +401,28 @@
                     tg.showAlert(data.message || "Noto'g'ri javob!");
                 }
             } catch (err) {
-                console.error("Test yuborishda xatolik:", err);
+                console.error("Test xatosi:", err);
             }
         }
 
-        // Ilova ochilganda avtomatik tekshiruv
+        // NAVIGATSIYA FUNKSIYALARI
+        function showBooksList() {
+            clearInterval(timerInterval);
+            clearInterval(heartbeatInterval);
+            document.getElementById('books-list-view').style.display = 'block';
+            document.getElementById('chapters-list-view').style.display = 'none';
+            document.getElementById('reading-view').style.display = 'none';
+        }
+
+        function showChaptersList() {
+            clearInterval(timerInterval);
+            clearInterval(heartbeatInterval);
+            document.getElementById('books-list-view').style.display = 'none';
+            document.getElementById('chapters-list-view').style.display = 'block';
+            document.getElementById('reading-view').style.display = 'none';
+        }
+
+        // ILOWA ISHGA TUSHGANDA
         window.onload = () => {
             registerUser();
         };
