@@ -1,13 +1,46 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+from typing import Optional
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 import datetime
 
-from database import get_db, User, ReadingSession
-import schemas
+# --- MA'LUMOTLAR BAZASI SOZLAMALARI ---
+DATABASE_URL = "sqlite:///./database.db"
 
-app = FastAPI(title="Read-to-Earn Backend API")
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
+# --- MODEL (BAZA JADVALI) ---
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_id = Column(Integer, unique=True, index=True, nullable=False)
+    username = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)  # Telefon raqami saqlanadigan ustun
+    coins_balance = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class ReadingSession(Base):
+    __tablename__ = "reading_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_id = Column(Integer, nullable=False)
+    start_time = Column(DateTime, default=datetime.datetime.utcnow)
+    last_heartbeat = Column(DateTime, default=datetime.datetime.utcnow)
+    is_completed = Column(Integer, default=0)
+
+Base.metadata.create_all(bind=engine)
+
+# --- FASTAPI TIZIMI ---
+app = FastAPI(title="Read-to-Earn Backend")
+
+# CORS sozlamasi (Frontend va Backend erkin bog'lanishi uchun)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,78 +49,126 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MINIMUM_READING_SECONDS = 120
-REWARD_PER_QUIZ = 10
+# DB Sessiyasini olish
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
+# --- PYDANTIC MODELLARI (REQUEST BODY) ---
+class UserAuth(BaseModel):
+    telegram_id: int
+    username: Optional[str] = None
+    phone_number: Optional[str] = None
+
+class SessionStart(BaseModel):
+    telegram_id: int
+
+class Heartbeat(BaseModel):
+    telegram_id: int
+    session_id: int
+
+class QuizClaim(BaseModel):
+    telegram_id: int
+    session_id: int
+    selected_answer: int
+
+# --- ROOT ENDPOINT (Render orqali ham sahifa ko'rinishi uchun) ---
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return "<h1>Read-to-Earn Backend API ishlayapti!</h1>"
+
+# --- AUTH ENDPOINT (TELEFON RAQAM VA USER SAQLASH) ---
 @app.post("/api/auth")
-def authenticate_user(user_data: schemas.UserAuth, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.telegram_id == user_data.telegram_id).first()
-    if not user:
-        user = User(telegram_id=user_data.telegram_id, username=user_data.username)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return {"status": "success", "user_id": user.id, "coins_balance": user.coins_balance}
-
-@app.post("/api/reading/start")
-def start_reading(data: schemas.StartReadingRequest, db: Session = Depends(get_db)):
+def auth_user(data: UserAuth, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.telegram_id == data.telegram_id).first()
+    
     if not user:
-        raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
+        user = User(
+            telegram_id=data.telegram_id,
+            username=data.username,
+            phone_number=data.phone_number,
+            coins_balance=0
+        )
+        db.add(user)
+    else:
+        # Yangi ma'lumot kelgan bo'lsa yangilaymiz
+        if data.phone_number:
+            user.phone_number = data.phone_number
+        if data.username:
+            user.username = data.username
 
-    new_session = ReadingSession(
-        user_id=user.id,
-        chapter_id=data.chapter_id,
-        start_time=datetime.datetime.utcnow(),
-        duration_seconds=0
-    )
-    db.add(new_session)
     db.commit()
-    db.refresh(new_session)
+    db.refresh(user)
+    
+    return {
+        "status": "ok",
+        "user_id": user.id,
+        "telegram_id": user.telegram_id,
+        "username": user.username,
+        "phone_number": user.phone_number,
+        "coins_balance": user.coins_balance
+    }
 
-    return {"status": "started", "session_id": new_session.id}
+# --- O'QISH SESSIYASINI BOSHLASH ---
+@app.post("/api/start-session")
+def start_session(data: SessionStart, db: Session = Depends(get_db)):
+    session = ReadingSession(telegram_id=data.telegram_id)
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return {"status": "ok", "session_id": session.id}
 
-@app.post("/api/reading/heartbeat")
-def reading_heartbeat(data: schemas.HeartbeatRequest, db: Session = Depends(get_db)):
-    session = db.query(ReadingSession).filter(ReadingSession.id == data.session_id).first()
+# --- HEARTBEAT (HAR 30 SONIYADA FAOLIKNI TEKSHIRISH) ---
+@app.post("/api/heartbeat")
+def heartbeat(data: Heartbeat, db: Session = Depends(get_db)):
+    session = db.query(ReadingSession).filter(
+        ReadingSession.id == data.session_id,
+        ReadingSession.telegram_id == data.telegram_id
+    ).first()
+    
     if not session:
         raise HTTPException(status_code=404, detail="Sessiya topilmadi")
-
-    if data.seconds_read > 35:
-        raise HTTPException(status_code=400, detail="G'irromlik aniqlandi")
-
-    session.duration_seconds += data.seconds_read
+    
+    session.last_heartbeat = datetime.datetime.utcnow()
     db.commit()
+    return {"status": "ok"}
 
-    return {"status": "updated", "current_duration": session.duration_seconds}
+# --- TEST YECHISH VA KOIN QO'SHISH ---
+@app.post("/api/claim-quiz")
+def claim_quiz(data: QuizClaim, db: Session = Depends(get_db)):
+    session = db.query(ReadingSession).filter(
+        ReadingSession.id == data.session_id,
+        ReadingSession.telegram_id == data.telegram_id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessiya topilmadi")
+    
+    if session.is_completed == 1:
+        raise HTTPException(status_code=400, detail="Bu sessiya uchun allaqachon mukofot olingan")
 
-@app.post("/api/reading/submit-quiz")
-def submit_quiz(data: schemas.SubmitQuizRequest, db: Session = Depends(get_db)):
+    # To'g'ri javob indeksi 1 deb olsak (masalan 2-variant)
+    if data.selected_answer != 1:
+        return {"status": "wrong_answer", "message": "Noto'g'ri javob, qaytadan urinib ko'ring"}
+
+    # Foydalanuvchi balansiga 10 koin qo'shish
     user = db.query(User).filter(User.telegram_id == data.telegram_id).first()
-    session = db.query(ReadingSession).filter(ReadingSession.id == data.session_id).first()
-
-    if not user or not session:
-        raise HTTPException(status_code=404, detail="Ma'lumot topilmadi")
-
-    if session.is_completed:
-        raise HTTPException(status_code=400, detail="Bu bob uchun mukofot allaqachon olingan")
-
-    if session.duration_seconds < MINIMUM_READING_SECONDS:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Kamida {MINIMUM_READING_SECONDS} soniya o'qishingiz kerak."
-        )
-
-    passing_score = data.total_questions * 0.66
-    if data.correct_answers < passing_score:
-        return {"status": "failed", "message": "Testdan o'ta olmadingiz.", "coins_earned": 0}
-
-    user.coins_balance += REWARD_PER_QUIZ
-    session.is_completed = True
-    db.commit()
-
-    return {
-        "status": "success",
-        "message": f"Tabriklaymiz! Sizga {REWARD_PER_QUIZ} koin berildi.",
-        "new_balance": user.coins_balance
-    }
+    if user:
+        user.coins_balance += 10
+        session.is_completed = 1
+        db.commit()
+        db.refresh(user)
+        return {
+            "status": "success",
+            "coins_earned": 10,
+            "new_balance": user.coins_balance
+        }
+    
+    raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
